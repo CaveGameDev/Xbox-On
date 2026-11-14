@@ -1,0 +1,16 @@
+# Cloudflare Pages header patch.
+#
+# The Minecraft client needs SharedArrayBuffer, which browsers only hand out to
+# cross-origin isolated documents. Pages serves static files without COOP/COEP by
+# default, so the game died with "The game could not start" and never showed its
+# download progress bar. These headers make /api/disc/boot.html an isolated
+# document; the game page is written into that same document, so it inherits them.
+
+/api/disc/boot.html
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: credentialless
+  Cross-Origin-Resource-Policy: same-origin
+  Cache-Control: no-store
+
+/api/disc/site.bin
+  Cache-Control: no-cache
