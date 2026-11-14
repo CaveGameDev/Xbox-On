@@ -85,15 +85,32 @@ async function serveLocal() {
     try {
       const info = await stat(file);
       if (!info.isFile()) throw new Error("not a file");
+      // single byte range, like the edge worker: the game is built on Range
+      let start = 0;
+      let end = info.size - 1;
+      let status = 200;
+      const asked = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || "").trim());
+      if (asked && (asked[1] || asked[2])) {
+        start = asked[1] === "" ? Math.max(0, info.size - Number(asked[2])) : Number(asked[1]);
+        if (asked[1] !== "" && asked[2] !== "") end = Math.min(Number(asked[2]), info.size - 1);
+        if (!Number.isFinite(start) || start >= info.size || start > end) {
+          res.writeHead(416, { "Content-Range": "bytes */" + info.size });
+          res.end();
+          return;
+        }
+        status = 206;
+      }
       const headers = {
         "Content-Type": TYPES[extname(file).toLowerCase()] || "application/octet-stream",
-        "Content-Length": info.size,
+        "Content-Length": end - start + 1,
+        "Accept-Ranges": "bytes",
         "Cache-Control": isBootPath(url.pathname) ? "no-store" : "no-cache"
       };
+      if (status === 206) headers["Content-Range"] = "bytes " + start + "-" + end + "/" + info.size;
       if (isBootPath(url.pathname)) Object.assign(headers, ISOLATION);
-      res.writeHead(200, headers);
+      res.writeHead(status, headers);
       if (req.method === "HEAD") res.end();
-      else createReadStream(file).pipe(res);
+      else createReadStream(file, { start, end }).pipe(res);
     } catch {
       res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
       res.end("Not found");
