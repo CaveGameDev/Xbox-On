@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#080b08">
+  <link rel="icon" href="data:,">
+  <title>Xbox One S</title>
+  <link rel="stylesheet" href="model.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script type="module">
+    // the site ships as one archive; unpack it here at runtime
+    const statusEl = document.querySelector('#status');
+    try {
+      const response = await fetch('/api/disc/site.bin', { cache: 'no-cache' });
+      if (!response.ok) throw new Error('site.bin ' + response.status);
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (new TextDecoder().decode(bytes.subarray(0, 8)) !== 'SITEBIN1') throw new Error('not a SITEBIN1 archive');
+      const headerLength = new DataView(bytes.buffer).getUint32(8, true);
+      const header = JSON.parse(new TextDecoder().decode(bytes.subarray(12, 12 + headerLength)));
+      const base = 12 + headerLength;
+      const entry = (name) => {
+        const file = header.files.find((candidate) => candidate.name === name);
+        if (!file) throw new Error(name + ' missing from site.bin');
+        return { type: file.type, data: bytes.subarray(base + file.offset, base + file.offset + file.size) };
+      };
+      const blobUrl = (name) => { const file = entry(name); return URL.createObjectURL(new Blob([file.data], { type: file.type })); };
+      const scene = entry('model.js');
+      globalThis.__siteAssets = { model: blobUrl('xbox_one_s.glb'), png: blobUrl('xb1.png') };
+      await import(URL.createObjectURL(new Blob([scene.data], { type: scene.type })));
+    } catch (error) {
+      console.error('[site.bin]', error);
+      statusEl.textContent = 'Could not unpack site.bin';
+    }
+  </script>
+</head>
+<body>
+  <div id="stage" aria-label="Interactive Xbox One S model"></div>
+  <a id="credit" href="https://sketchfab.com/3d-models/xbox-one-s-hq-1472eaeed5d94f7d94074504de3d3bef" target="_blank" rel="noopener">Model: 4DS Artwork · CC BY 4.0</a>
+  <div id="status" role="status" aria-live="polite">Loading console…</div>
+</body>
+</html>

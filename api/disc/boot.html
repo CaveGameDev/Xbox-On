@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <base href="/">
+  <title>Xbox One S</title>
+  <style>html,body{margin:0;height:100%;background:#080b08;color:#e8f2e6;font:600 15px/1.5 system-ui,sans-serif}body{display:grid;place-items:center}p{margin:0}</style>
+</head>
+<body>
+  <p id="shell">Starting game…</p>
+  <script>
+    /* Shell for the isolated app: this document is served with the COOP/COEP
+       headers the game needs, so the page unpacked out of site.bin can take the
+       document over and stay cross-origin isolated. */
+    (async function boot() {
+      const shell = document.getElementById('shell');
+      try {
+        const response = await fetch('/api/disc/site.bin', { cache: 'no-cache' });
+        if (!response.ok) throw new Error('site.bin ' + response.status);
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (new TextDecoder().decode(bytes.subarray(0, 8)) !== 'SITEBIN1') throw new Error('not a SITEBIN1 archive');
+        const headerLength = new DataView(bytes.buffer).getUint32(8, true);
+        const header = JSON.parse(new TextDecoder().decode(bytes.subarray(12, 12 + headerLength)));
+        const base = 12 + headerLength;
+        const file = header.files.find((entry) => entry.name === 'game.html');
+        if (!file) throw new Error('game.html missing from site.bin');
+        const html = new TextDecoder().decode(bytes.subarray(base + file.offset, base + file.offset + file.size));
+        document.open();
+        document.write(html);
+        document.close();
+      } catch (error) {
+        console.error('[site.bin]', error);
+        shell.textContent = 'Could not unpack site.bin';
+      }
+    })();
+  </script>
+</body>
+</html>
