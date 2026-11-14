@@ -1,4 +1,6 @@
 const T=globalThis.THREE,stage=document.querySelector('#stage'),statusEl=document.querySelector('#status');
+// the pill only exists while there is something to say, so it is hidden when empty
+const setStatus=text=>{statusEl.textContent=text;statusEl.hidden=!text};
 const gameUrl=new URL('/api/disc/boot.html',location.href).href;
 const assets=globalThis.__siteAssets;
 if(!assets||!assets.model||!assets.png)throw new Error('site.bin was not unpacked');
@@ -67,8 +69,8 @@ loader.load(MODEL_URL,gltf=>{
   disc.position.set(REST.x,state.restY,REST.z);
   updateFitBox();
   modelReady=true;
-  statusEl.textContent='Disc on the table';
-},undefined,error=>{console.error('Xbox model failed to load',error);statusEl.textContent='Could not load the console model'});
+  setStatus('');
+},undefined,error=>{console.error('Xbox model failed to load',error);setStatus('Could not load the console model')});
 
 /* ---- framing: fit the console plus the disc into any viewport ---- */
 const fitBox=new T.Box3(),target=new T.Vector3();
@@ -124,7 +126,7 @@ let input=null,drag=null;
 function launch(){
   // the isolated app has to be its own document to receive the COOP/COEP headers,
   // so it replaces this page in the current tab
-  statusEl.textContent='Launching game…';
+  setStatus('Launching game…');
   location.replace(gameUrl);
 }
 el.addEventListener('pointerdown',e=>{
@@ -133,7 +135,7 @@ el.addEventListener('pointerdown',e=>{
     // carried under the cursor at slot height, so what you see is where it drops
     input='disc';dragPlane.constant=-slotY;
     state.mode='drag';state.fired=false;
-    statusEl.textContent='Dragging disc';el.style.cursor='grabbing';
+    setStatus('Dragging disc');el.style.cursor='grabbing';
   }else{input='orbit';drag={x:e.clientX,y:e.clientY}}
 });
 el.addEventListener('pointermove',e=>{
@@ -148,15 +150,15 @@ el.addEventListener('pointerup',()=>{
   if(input==='disc'){
     el.style.cursor='grab';
     if(modelReady&&aligned(state.tx)&&state.tz<=front+.4){
-      state.mode='inserting';statusEl.textContent='Inserting disc';
+      state.mode='inserting';setStatus('Inserting disc');
     }else{
-      state.mode='rest';state.restY=.012;statusEl.textContent='Disc on the table';
+      state.mode='rest';state.restY=.012;setStatus('');
     }
   }
   input=null;drag=null;
 });
 el.addEventListener('pointercancel',()=>{
-  if(input==='disc'){state.mode='rest';state.restY=.012;statusEl.textContent='Disc on the table'}
+  if(input==='disc'){state.mode='rest';state.restY=.012;setStatus('')}
   input=null;drag=null;
 });
 el.addEventListener('wheel',e=>{e.preventDefault();cam.zoom=T.MathUtils.clamp(cam.zoom*(1+e.deltaY*.0012),.55,2.4)},{passive:false});
@@ -176,7 +178,7 @@ function frame(){
   }else if(state.mode==='inserting'){
     p.x+=(slotX-p.x)*.22;p.y+=(slotY-p.y)*.3;p.z+=(insideZ()-p.z)*.14;
     if(Math.abs(p.z-insideZ())<.03&&Math.abs(p.x-slotX)<.01){
-      state.mode='inside';disc.visible=false;state.at=performance.now();state.fired=false;statusEl.textContent='Disc inside';
+      state.mode='inside';disc.visible=false;state.at=performance.now();state.fired=false;setStatus('Disc inside');
     }
   }else if(state.mode==='inside'&&!state.fired&&performance.now()-state.at>=3000){
     state.fired=true;launch();
