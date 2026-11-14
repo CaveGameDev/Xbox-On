@@ -1,7 +1,9 @@
 const T=globalThis.THREE,stage=document.querySelector('#stage'),statusEl=document.querySelector('#status');
 // the pill only exists while there is something to say, so it is hidden when empty
 const setStatus=text=>{statusEl.textContent=text;statusEl.hidden=!text};
-const gameUrl=new URL('/api/disc/boot.html',location.href).href;
+// no .html: hosts like Cloudflare Pages 308-redirect that to the clean URL, and
+// the redirect target is what has to carry the COOP/COEP headers
+const gameUrl=new URL('/api/disc/boot',location.href).href;
 const assets=globalThis.__siteAssets;
 if(!assets||!assets.model||!assets.png)throw new Error('site.bin was not unpacked');
 const MODEL_URL=assets.model;

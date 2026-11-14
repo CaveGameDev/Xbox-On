@@ -6,6 +6,15 @@
 # download progress bar. These headers make /api/disc/boot.html an isolated
 # document; the game page is written into that same document, so it inherits them.
 
+# Cloudflare Pages redirects *.html to the extensionless URL (308), and _headers
+# rules are matched against the request path, not the redirect target. So the
+# document is served at /api/disc/boot and that is the path that has to be listed.
+/api/disc/boot
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: credentialless
+  Cross-Origin-Resource-Policy: same-origin
+  Cache-Control: no-store
+
 /api/disc/boot.html
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Embedder-Policy: credentialless

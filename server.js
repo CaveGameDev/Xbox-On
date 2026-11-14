@@ -7,7 +7,11 @@
 
    `node server.js [port]` hosts it locally; the default export is the Worker. */
 
-const BOOT_PATH = "/api/disc/boot.html";
+/* The entry point is served at its extensionless URL so hosts that clean .html
+   URLs (Cloudflare Pages answers /x.html with a 308 to /x) do not send the
+   browser through a redirect whose target would miss the isolation headers. */
+const BOOT_PATH = "/api/disc/boot";
+const isBootPath = (pathname) => pathname === "/api/disc/boot" || pathname === "/api/disc/boot.html";
 const ISOLATION = {
   "Cross-Origin-Opener-Policy": "same-origin",
   "Cross-Origin-Embedder-Policy": "credentialless"
@@ -35,7 +39,7 @@ export default {
   async fetch(request, env) {
     if (env && env.ASSETS) {
       const response = await env.ASSETS.fetch(request);
-      return new URL(request.url).pathname === BOOT_PATH ? withIsolation(response) : response;
+      return isBootPath(new URL(request.url).pathname) ? withIsolation(response) : response;
     }
     return new Response("Not found", { status: 404 });
   }
@@ -65,7 +69,8 @@ async function serveLocal() {
 
     let rel;
     try {
-      rel = decodeURIComponent(url.pathname === "/" ? "index.html" : url.pathname).replace(/^\/+/, "");
+      const pathname = isBootPath(url.pathname) ? "/api/disc/boot.html" : url.pathname === "/" ? "/index.html" : url.pathname;
+      rel = decodeURIComponent(pathname).replace(/^\/+/, "");
     } catch {
       res.writeHead(400);
       res.end("Bad request");
@@ -83,9 +88,9 @@ async function serveLocal() {
       const headers = {
         "Content-Type": TYPES[extname(file).toLowerCase()] || "application/octet-stream",
         "Content-Length": info.size,
-        "Cache-Control": url.pathname === BOOT_PATH ? "no-store" : "no-cache"
+        "Cache-Control": isBootPath(url.pathname) ? "no-store" : "no-cache"
       };
-      if (url.pathname === BOOT_PATH) Object.assign(headers, ISOLATION);
+      if (isBootPath(url.pathname)) Object.assign(headers, ISOLATION);
       res.writeHead(200, headers);
       if (req.method === "HEAD") res.end();
       else createReadStream(file).pipe(res);
@@ -97,7 +102,7 @@ async function serveLocal() {
 
   server.listen(port, "127.0.0.1", () => {
     console.log("hosting this folder on http://127.0.0.1:" + port + "/");
-    console.log("game boots at  http://127.0.0.1:" + port + "/api/disc/boot.html");
+    console.log("game boots at  http://127.0.0.1:" + port + BOOT_PATH);
   });
 }
 
