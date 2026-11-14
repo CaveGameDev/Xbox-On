@@ -32,18 +32,26 @@
   <script>
     /* Isolated entry point. This document is served with the COOP/COEP headers the
        game needs, so the page unpacked out of site.bin can take the document over
-       and keep crossOriginIsolated true. Nothing here waits for a click. */
+       and keep crossOriginIsolated true. Nothing here waits for a click.
+
+       Only game.html is wanted out of the archive, so the shell range-reads the
+       archive header and that one entry instead of pulling the whole ~17 MB bin
+       (the glb and the disc texture in there belong to the console page). Hosts
+       that ignore Range still get the full download with a real progress bar. */
     (async function boot() {
+      const SITE = '/api/disc/site.bin';
       const fill = document.getElementById('fill');
       const bar = fill.parentElement;
       const label = document.getElementById('label');
       const meta = document.getElementById('meta');
 
+      let whole = null;           // set if the host makes us take the full archive
+
       const paint = (fraction, text) => {
         const percent = Math.max(0, Math.min(100, Math.round(fraction * 100)));
         fill.style.width = percent + '%';
         bar.setAttribute('aria-valuenow', String(percent));
-        meta.textContent = text;
+        if (text !== undefined) meta.textContent = text;
       };
       const fail = (message) => {
         label.textContent = 'The disc could not be read';
@@ -52,46 +60,66 @@
       };
 
       if (!crossOriginIsolated) {
-        // every page on the host must send COOP/COEP or the game cannot allocate shared memory
         fail('This page was served without the Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy headers, so the game cannot start.');
         return;
       }
 
-      try {
-        const response = await fetch('/api/disc/site.bin', { cache: 'no-store' });
-        if (!response.ok) throw new Error('site.bin ' + response.status);
+      // streams a response body into one buffer, driving the bar as it goes
+      async function drain(response) {
         const total = Number(response.headers.get('content-length')) || 0;
-
-        let bytes;
-        if (response.body && response.body.getReader) {
-          const reader = response.body.getReader();
-          const chunks = [];
-          let received = 0;
-          for (;;) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            chunks.push(value);
-            received += value.length;
-            paint(total ? received / total : 0.5,
-              (received / 1048576).toFixed(1) + (total ? ' / ' + (total / 1048576).toFixed(1) : '') + ' MB');
-          }
-          bytes = new Uint8Array(received);
-          let at = 0;
-          for (const chunk of chunks) { bytes.set(chunk, at); at += chunk.length; }
-        } else {
-          bytes = new Uint8Array(await response.arrayBuffer());
+        if (!(response.body && response.body.getReader)) return new Uint8Array(await response.arrayBuffer());
+        const reader = response.body.getReader();
+        const chunks = [];
+        let received = 0;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          received += value.length;
+          if (total) paint(received / total, (received / 1048576).toFixed(1) + ' / ' + (total / 1048576).toFixed(1) + ' MB');
         }
+        const bytes = new Uint8Array(received);
+        let at = 0;
+        for (const chunk of chunks) { bytes.set(chunk, at); at += chunk.length; }
+        return bytes;
+      }
 
-        label.textContent = 'Unpacking the disc…';
-        paint(1, 'Verifying archive');
-        if (new TextDecoder().decode(bytes.subarray(0, 8)) !== 'SITEBIN1') throw new Error('site.bin is not a SITEBIN1 archive');
+      async function downloadWhole() {
+        const response = await fetch(SITE, { cache: 'no-store' });
+        if (!response.ok) throw new Error('site.bin ' + response.status);
+        whole = await drain(response);
+        return whole;
+      }
 
-        const headerLength = new DataView(bytes.buffer).getUint32(8, true);
-        const header = JSON.parse(new TextDecoder().decode(bytes.subarray(12, 12 + headerLength)));
+      // inclusive byte range; falls back to the full archive when Range is ignored
+      async function slice(start, end) {
+        if (whole) return whole.subarray(start, end + 1);
+        const response = await fetch(SITE, {
+          cache: 'no-store',
+          headers: { Range: 'bytes=' + start + '-' + end }
+        });
+        if (response.status === 206) return new Uint8Array(await response.arrayBuffer());
+        const all = await downloadWhole();
+        return all.subarray(start, end + 1);
+      }
+
+      try {
+        const prefix = await slice(0, 11);
+        if (prefix.length !== 12) throw new Error('site.bin is too short to be an archive');
+        if (new TextDecoder().decode(prefix.subarray(0, 8)) !== 'SITEBIN1') throw new Error('site.bin is not a SITEBIN1 archive');
+        paint(0.35, 'Archive header');
+
+        const headerLength = new DataView(prefix.buffer, prefix.byteOffset, 12).getUint32(8, true);
+        if (!headerLength || headerLength > 1 << 20) throw new Error('site.bin header length looks wrong');
+        const header = JSON.parse(new TextDecoder().decode(await slice(12, 12 + headerLength - 1)));
         const base = 12 + headerLength;
+
         const file = header.files.find((entry) => entry.name === 'game.html');
         if (!file) throw new Error('game.html is missing from site.bin');
-        const html = new TextDecoder().decode(bytes.subarray(base + file.offset, base + file.offset + file.size));
+
+        label.textContent = 'Unpacking the disc…';
+        paint(0.7, 'Reading game.html');
+        const html = new TextDecoder().decode(await slice(base + file.offset, base + file.offset + file.size - 1));
 
         paint(1, 'Starting…');
         document.open();
